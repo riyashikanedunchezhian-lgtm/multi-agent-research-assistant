@@ -28,9 +28,11 @@ A sophisticated research assistant built with LangGraph that combines RAG (Retri
    │  Retrieval    │  │ Tool-Calling  │  │  Uncertain    │
    │     Node      │  │     Node      │  │   (fallback)  │
    │               │  │               │  │               │
-   │ - ChromaDB    │  │ - Calculator  │  │ - Default to  │
-   │ - Similarity  │  │ - Web Search  │  │   retrieval   │
-   │   Search      │  │ - Code Exec   │  │               │
+   │ - ChromaDB    │  │ - LLM Tool    │  │ - Default to  │
+   │ - Similarity  │  │   Selection   │  │   retrieval   │
+   │   Search      │  │ - Calculator  │  │               │
+   │               │  │ - Web Search  │  │               │
+   │               │  │ - Code Exec   │  │               │
    └───────┬───────┘  └───────┬───────┘  └───────┬───────┘
            │                  │                  │
            │                  │                  │
@@ -112,6 +114,7 @@ The project implements a concrete efficiency improvement by using different mode
 | Node | Model | Reason | Cost per 1K tokens |
 |------|-------|--------|-------------------|
 | Router | GPT-4o-mini | Simple classification task | $0.00015 |
+| Tool Selection | GPT-4o-mini | Intelligent tool selection | $0.00015 |
 | Synthesis | GPT-4o | Complex reasoning required | $0.005 |
 
 ### Efficiency Impact
@@ -128,16 +131,17 @@ Based on test runs with sample queries:
 
 **Tool-calling query**: "Calculate 25 * 17"
 - Router: ~60 tokens (GPT-4o-mini) = $0.000009
+- Tool Selection: ~38 tokens (GPT-4o-mini) = $0.000006
 - Synthesis: ~120 tokens (GPT-4o) = $0.00060
-- **Total**: $0.000609
+- **Total**: $0.000615
 
-**If we used GPT-4o for routing**: ~60 tokens = $0.00030
-- **Savings per query**: $0.000291 (48% reduction in routing cost)
+**If we used GPT-4o for routing + tool selection**: ~98 tokens = $0.00049
+- **Savings per query**: $0.000375 (38% reduction in classification cost)
 
 ### Cumulative Impact
 
-For 1,000 queries per day:
-- **Savings**: ~$0.29 per day, ~$8.70 per month, ~$105 per year
+For 1,000 queries per day (50% RAG-only, 50% tool-calling):
+- **Savings**: ~$0.33 per day, ~$9.90 per month, ~$120 per year
 - **Scalability**: Savings grow linearly with query volume
 
 ## 🛡️ Guardrails
@@ -249,12 +253,12 @@ curl -X POST http://localhost:8000/query \
     {
       "node_name": "tool_calling",
       "timestamp": "2024-01-01T00:00:01",
-      "input_summary": "Tool: calculator, Input: 25 * 17",
+      "input_summary": "LLM-selected tool: calculator, Input: 25 * 17",
       "output_summary": "Output: 425",
       "token_usage": {
-        "prompt_tokens": 8,
+        "prompt_tokens": 38,
         "completion_tokens": 3,
-        "total_tokens": 11
+        "total_tokens": 41
       }
     },
     {
@@ -270,9 +274,9 @@ curl -X POST http://localhost:8000/query \
     }
   ],
   "token_usage": {
-    "prompt_tokens": 158,
+    "prompt_tokens": 188,
     "completion_tokens": 33,
-    "total_tokens": 191
+    "total_tokens": 221
   },
   "execution_time": "2024-01-01T00:00:02",
   "status": "completed"
@@ -310,16 +314,23 @@ The test suite covers:
    - Both retrieval and tool queries
    - Uncertain queries
 
-2. **Efficiency Checks**
+2. **LLM-Based Tool Selection**
+   - Accurate tool selection for different query types
+   - Calculator selection for mathematical queries
+   - Web search selection for information queries
+   - Graceful fallback when LLM selection fails
+
+3. **Efficiency Checks**
    - RAG-only queries don't trigger tool calls
    - Tool queries actually invoke tools
    - Token usage tracked per node
 
-3. **Graceful Degradation**
+4. **Graceful Degradation**
    - Tool failures don't crash the system
    - Synthesis continues with partial information
+   - LLM selection failures fall back to web search
 
-4. **Trace Accuracy**
+5. **Trace Accuracy**
    - Reasoning trace reflects actual nodes fired
    - Token usage is accurate per node
    - All required fields present in trace

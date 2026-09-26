@@ -72,7 +72,7 @@ uvicorn src.api:app --reload --host 0.0.0.0 --port 8000
 
 1. **Multi-node LangGraph workflow** with conditional routing
 2. **RAG** with ChromaDB and sentence-transformers embeddings
-3. **Agentic tool-calling** (calculator, web search, code interpreter)
+3. **Agentic tool-calling** with LLM-based intelligent tool selection (calculator, web search, code interpreter)
 4. **Explicit state tracking** with full reasoning traces
 5. **Token efficiency** using different models for routing vs synthesis
 6. **Guardrails** for router uncertainty and tool failure graceful degradation

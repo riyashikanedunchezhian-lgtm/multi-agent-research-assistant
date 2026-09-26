@@ -70,7 +70,9 @@ A sophisticated research assistant built with LangGraph that combines RAG (Retri
    - No LLM call (efficient)
 
 3. **Tool-Calling Node**
-   - Selects and executes appropriate tools based on query
+   - Uses LLM-based intelligent tool selection (not just keyword matching)
+   - Analyzes query to choose the most appropriate tool
+   - Extracts precise input parameters for the selected tool
    - Available tools: Calculator, Web Search, Current Date, Code Interpreter
    - Handles tool failures gracefully with error messages
    - Continues to synthesis even if tool fails
@@ -386,6 +388,9 @@ DOCUMENTS_DIR=./data/documents
 - Document chunking and similarity search
 
 ### 3. Agentic Tool-Calling
+- **LLM-based intelligent tool selection** (not simple keyword matching)
+- Analyzes query to choose the most appropriate tool
+- Extracts precise input parameters for the selected tool
 - Calculator for mathematical operations
 - Web search for current information
 - Code interpreter for Python execution
@@ -417,7 +422,7 @@ DOCUMENTS_DIR=./data/documents
 
 ## 🚧 Future Enhancements
 
-- [ ] Add more sophisticated tool selection using LLM
+- [x] Add more sophisticated tool selection using LLM (completed)
 - [ ] Implement parallel execution of retrieval and tool-calling
 - [ ] Add streaming responses for long-running queries
 - [ ] Implement query caching
@@ -426,6 +431,21 @@ DOCUMENTS_DIR=./data/documents
 - [ ] Add authentication/authorization
 - [ ] Implement rate limiting
 - [ ] Add monitoring and metrics collection
+
+## 🔬 Recent Improvements
+
+### LLM-Based Tool Selection
+**Implemented**: The tool-calling node now uses an LLM to intelligently select which tool to use, rather than simple keyword matching.
+
+**Benefits**:
+- More accurate tool selection for complex queries
+- Better extraction of tool input parameters
+- Handles edge cases that keyword matching misses
+- Scalable approach - adding new tools doesn't require updating keyword logic
+
+**Example**:
+- Old: Simple keyword matching (e.g., "calculate" → calculator)
+- New: LLM understands semantic intent (e.g., "What's 25 times 17?" → calculator with input "25 * 17")
 
 ## 📄 License
 

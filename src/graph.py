@@ -188,38 +188,74 @@ Examples:
 
     def tool_calling_node(self, state: GraphState) -> GraphState:
         """
-        Tool-calling node: Determine which tool to call and execute it.
+        Tool-calling node: Use LLM to intelligently select and execute the appropriate tool.
         """
         query = state["query"]
         available_tools = list_tools()
         
-        # Use a simple heuristic to select the tool
-        # In production, you'd use an LLM to select the tool
-        tool_name = None
-        tool_input = query
+        # Use LLM to select the tool and extract input
+        tool_selection_llm = LLMClient(
+            provider=self.router_provider,
+            model=self.router_model,
+        )
         
-        query_lower = query.lower()
+        # Build tool descriptions for the LLM
+        tool_descriptions = """
+Available tools:
+1. calculator - Evaluate mathematical expressions (e.g., "25 * 17", "3.14 * 2^2")
+2. web_search - Search the web for current information (e.g., "Apple stock price", "latest AI news")
+3. get_current_date - Get the current date and time
+4. code_interpreter - Execute Python code safely (e.g., statistical calculations, data processing)
+"""
         
-        if any(word in query_lower for word in ["calculate", "math", "compute", "+", "-", "*", "/"]):
-            tool_name = "calculator"
-            # Extract the mathematical expression
-            import re
-            math_expr = re.search(r'([\d\+\-\*/\^\(\)\.]+)', query)
-            if math_expr:
-                tool_input = math_expr.group(1)
+        tool_selection_prompt = ChatPromptTemplate.from_messages([
+            ("system", """You are a tool selection agent. Your job is to:
+1. Select the most appropriate tool for the user's query
+2. Extract the exact input needed for that tool
+
+{tool_descriptions}
+
+Respond in this format:
+TOOL: [tool_name]
+INPUT: [exact_input_for_tool]
+
+Examples:
+- "Calculate 25 * 17" -> TOOL: calculator, INPUT: 25 * 17
+- "What's the current stock price of Apple?" -> TOOL: web_search, INPUT: Apple stock price
+- "What time is it?" -> TOOL: get_current_date, INPUT: (empty string)
+- "Calculate the standard deviation of [1,2,3,4,5]" -> TOOL: code_interpreter, INPUT: import statistics; print(statistics.stdev([1,2,3,4,5]))
+
+Respond ONLY with the tool name and input, nothing else."""),
+            ("user", "Query: {query}")
+        ])
         
-        elif any(word in query_lower for word in ["search", "web", "google", "find online"]):
+        try:
+            prompt = tool_selection_prompt.format(
+                tool_descriptions=tool_descriptions,
+                query=query
+            )
+            response, selection_token_usage = tool_selection_llm.invoke(prompt)
+            
+            # Parse the response
+            tool_name = None
+            tool_input = query  # Default to full query if parsing fails
+            
+            for line in response.split("\n"):
+                if line.startswith("TOOL:"):
+                    tool_name = line.split(":", 1)[1].strip().lower()
+                elif line.startswith("INPUT:"):
+                    tool_input = line.split(":", 1)[1].strip()
+            
+            # Validate tool name
+            if tool_name not in available_tools:
+                tool_name = "web_search"  # Fallback to web search
+                tool_input = query
+            
+        except Exception as e:
+            # Fallback to web search if LLM selection fails
             tool_name = "web_search"
-        
-        elif any(word in query_lower for word in ["date", "time", "now", "current"]):
-            tool_name = "get_current_date"
-        
-        elif any(word in query_lower for word in ["code", "python", "execute", "run"]):
-            tool_name = "code_interpreter"
-        
-        else:
-            # Default to web search for tool-only queries
-            tool_name = "web_search"
+            tool_input = query
+            selection_token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         
         # Execute the tool
         tool = TOOL_MAP.get(tool_name)
@@ -240,11 +276,11 @@ Examples:
         state["tool_output"] = tool_output
         state["tool_error"] = tool_error
         
-        # Estimate token usage
+        # Calculate token usage (including tool selection)
         token_usage = {
-            "prompt_tokens": len(tool_input.split()),
-            "completion_tokens": len(tool_output.split()) if tool_output else 0,
-            "total_tokens": len(tool_input.split()) + (len(tool_output.split()) if tool_output else 0),
+            "prompt_tokens": selection_token_usage.get("prompt_tokens", 0) + len(tool_input.split()),
+            "completion_tokens": selection_token_usage.get("completion_tokens", 0) + (len(tool_output.split()) if tool_output else 0),
+            "total_tokens": selection_token_usage.get("total_tokens", 0) + len(tool_input.split()) + (len(tool_output.split()) if tool_output else 0),
         }
         
         state["tool_token_usage"] = token_usage
@@ -253,7 +289,7 @@ Examples:
         state = add_trace_entry(
             state,
             node_name="tool_calling",
-            input_summary=f"Tool: {tool_name}, Input: {tool_input[:100]}...",
+            input_summary=f"LLM-selected tool: {tool_name}, Input: {tool_input[:100]}...",
             output_summary=f"Output: {tool_output[:100] if tool_output else tool_error[:100]}...",
             token_usage=token_usage,
             error=tool_error,

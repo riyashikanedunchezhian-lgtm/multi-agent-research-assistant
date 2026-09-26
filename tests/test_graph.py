@@ -125,9 +125,19 @@ class TestRetrievalNode:
 class TestToolCallingNode:
     """Tests for the tool-calling node."""
 
+    @patch("src.graph.LLMClient")
     @patch("src.graph.TOOL_MAP")
-    def test_tool_calling_calculator(self, mock_tool_map, graph):
-        """Test that tool-calling node invokes calculator for math queries."""
+    def test_tool_calling_calculator(self, mock_tool_map, mock_llm_client, graph):
+        """Test that LLM-based tool selection chooses calculator for math queries."""
+        # Mock LLM tool selection
+        mock_selection_llm = Mock()
+        mock_selection_llm.invoke.return_value = (
+            "TOOL: calculator\nINPUT: 25 * 17",
+            {"prompt_tokens": 50, "completion_tokens": 10, "total_tokens": 60}
+        )
+        mock_llm_client.return_value = mock_selection_llm
+        
+        # Mock calculator tool
         mock_tool = Mock()
         mock_tool.invoke.return_value = "425"
         mock_tool_map.__getitem__.return_value = mock_tool
@@ -136,12 +146,23 @@ class TestToolCallingNode:
         result = graph.tool_calling_node(state)
         
         assert result["tool_name"] == "calculator"
+        assert result["tool_input"] == "25 * 17"
         assert result["tool_output"] == "425"
         assert result["tool_error"] is None
 
+    @patch("src.graph.LLMClient")
     @patch("src.graph.TOOL_MAP")
-    def test_tool_calling_web_search(self, mock_tool_map, graph):
-        """Test that tool-calling node invokes web search."""
+    def test_tool_calling_web_search(self, mock_tool_map, mock_llm_client, graph):
+        """Test that LLM-based tool selection chooses web search."""
+        # Mock LLM tool selection
+        mock_selection_llm = Mock()
+        mock_selection_llm.invoke.return_value = (
+            "TOOL: web_search\nINPUT: Apple stock price",
+            {"prompt_tokens": 50, "completion_tokens": 10, "total_tokens": 60}
+        )
+        mock_llm_client.return_value = mock_selection_llm
+        
+        # Mock web search tool
         mock_tool = Mock()
         mock_tool.invoke.return_value = "Search results for Apple stock price"
         mock_tool_map.__getitem__.return_value = mock_tool
@@ -150,11 +171,22 @@ class TestToolCallingNode:
         result = graph.tool_calling_node(state)
         
         assert result["tool_name"] == "web_search"
+        assert result["tool_input"] == "Apple stock price"
         assert result["tool_output"] == "Search results for Apple stock price"
 
+    @patch("src.graph.LLMClient")
     @patch("src.graph.TOOL_MAP")
-    def test_tool_calling_handles_failure(self, mock_tool_map, graph):
+    def test_tool_calling_handles_failure(self, mock_tool_map, mock_llm_client, graph):
         """Test that tool-calling node handles tool failures gracefully."""
+        # Mock LLM tool selection
+        mock_selection_llm = Mock()
+        mock_selection_llm.invoke.return_value = (
+            "TOOL: calculator\nINPUT: 25 * 17",
+            {"prompt_tokens": 50, "completion_tokens": 10, "total_tokens": 60}
+        )
+        mock_llm_client.return_value = mock_selection_llm
+        
+        # Mock tool that fails
         mock_tool = Mock()
         mock_tool.invoke.side_effect = Exception("Tool failed")
         mock_tool_map.__getitem__.return_value = mock_tool
@@ -165,6 +197,27 @@ class TestToolCallingNode:
         assert result["tool_error"] is not None
         assert "Tool execution failed" in result["tool_error"]
         assert result["tool_output"] is None
+
+    @patch("src.graph.LLMClient")
+    @patch("src.graph.TOOL_MAP")
+    def test_tool_calling_llm_selection_fallback(self, mock_tool_map, mock_llm_client, graph):
+        """Test that tool-calling falls back to web search if LLM selection fails."""
+        # Mock LLM that fails
+        mock_selection_llm = Mock()
+        mock_selection_llm.invoke.side_effect = Exception("LLM failed")
+        mock_llm_client.return_value = mock_selection_llm
+        
+        # Mock web search tool (fallback)
+        mock_tool = Mock()
+        mock_tool.invoke.return_value = "Search results"
+        mock_tool_map.__getitem__.return_value = mock_tool
+        
+        state = create_initial_state("Some query")
+        result = graph.tool_calling_node(state)
+        
+        # Should fall back to web search
+        assert result["tool_name"] == "web_search"
+        assert result["tool_input"] == "Some query"
 
 
 class TestSynthesisNode:
@@ -257,6 +310,13 @@ class TestEfficiency:
             {"prompt_tokens": 50, "completion_tokens": 10, "total_tokens": 60}
         )
         
+        # Mock tool selection LLM
+        mock_tool_selection_llm = Mock()
+        mock_tool_selection_llm.invoke.return_value = (
+            "TOOL: calculator\nINPUT: 25 * 17",
+            {"prompt_tokens": 30, "completion_tokens": 8, "total_tokens": 38}
+        )
+        
         # Mock synthesis
         mock_synthesis_llm = Mock()
         mock_synthesis_llm.invoke.return_value = (
@@ -264,7 +324,7 @@ class TestEfficiency:
             {"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120}
         )
         
-        mock_llm_client.side_effect = [mock_router_llm, mock_synthesis_llm]
+        mock_llm_client.side_effect = [mock_router_llm, mock_tool_selection_llm, mock_synthesis_llm]
         
         # Mock tool
         mock_tool = Mock()

@@ -25,16 +25,18 @@ class LLMClient:
 
         if provider == "openai":
             api_key = os.getenv("OPENAI_API_KEY")
+            base_url = os.getenv("OPENAI_API_BASE")
             if not api_key:
                 raise ValueError("OPENAI_API_KEY not found in environment variables")
-            
+
             if model is None:
                 model = os.getenv("ROUTER_MODEL", "gpt-4o-mini")
-            
+
             self.llm = ChatOpenAI(
                 model=model,
                 temperature=temperature,
                 api_key=api_key,
+                base_url=base_url,
             )
         
         elif provider == "anthropic":
